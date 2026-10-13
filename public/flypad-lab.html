@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<title>FlyPad Lab</title>
+<style>
+  /* layout: una colonna, un passo alla volta al centro, log e report sotto */
+  :root {
+    --bg: #f3f5f8; --surface: #ffffff; --surface-2: #e8ecf1; --line: #cdd4dc;
+    --text: #141a21; --muted: #5f6b78; --accent: #0a8fa8; --ok: #1f9d55; --warn: #b97800; --danger: #d63333;
+    --mono: ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116; --surface: #151a21; --surface-2: #1d242d; --line: #2c3540;
+      --text: #e8edf2; --muted: #8a96a3; --accent: #3ec7e0; --ok: #46d17f; --warn: #f2b33d; --danger: #ef4b4b;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); }
+  main { max-width: 640px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 16px; }
+  h1 { margin: 0; font-size: 22px; }
+  p { margin: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  button { font: inherit; font-size: 14px; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06232a; font-weight: 700; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); font-variant-numeric: tabular-nums; }
+  .chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); }
+
+  .step { text-align: center; padding: 24px 16px; }
+  .step .count { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .step .what { font-size: 24px; font-weight: 700; text-wrap: balance; }
+  .step .phase { font-size: 15px; font-weight: 600; }
+  .phase.prep { color: var(--warn); } .phase.rec { color: var(--danger); } .phase.done { color: var(--ok); }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .1s linear; }
+
+  .live { font: 12px/1.6 var(--mono); overflow-x: auto; white-space: pre; }
+  .live b { color: var(--muted); font-weight: 400; }
+  .live .chg { color: var(--accent); font-weight: 700; }
+  textarea { width: 100%; min-height: 240px; font: 12px/1.5 var(--mono); background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; resize: vertical; }
+  .err { color: var(--danger); font-size: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header class="row" style="justify-content: space-between">
+    <div>
+      <h1>FlyPad Lab</h1>
+      <p class="muted">Mappatura guidata di stick e tasti del Parrot FlyPad</p>
+    </div>
+    <div class="row" id="status"><span class="chip">non connesso</span></div>
+  </header>
+
+  <!-- 1. connessione -->
+  <section class="card" id="connectCard">
+    <p>Tieni il <strong>drone spento</strong> e il FlyPad acceso. Premi il pulsante e scegli <code>FLYPAD_…</code> dalla lista.</p>
+    <p class="muted">La procedura dura circa 2 minuti: per ogni passo hai 2,5 secondi per prepararti, poi 2,5 secondi di registrazione mentre tieni la posizione. Appoggia il telefono dove lo vedi bene.</p>
+    <div class="row"><button class="primary" id="connectBtn">Collega FlyPad</button></div>
+    <p class="err" id="connectErr" hidden></p>
+  </section>
+
+  <!-- 2. procedura -->
+  <section class="card step" id="stepCard" hidden>
+    <div class="count" id="stepCount"></div>
+    <div class="what" id="stepWhat"></div>
+    <div class="phase" id="stepPhase"></div>
+    <div class="bar"><span id="stepBar"></span></div>
+    <div class="row" style="justify-content: center">
+      <button id="startBtn" class="primary">Inizia</button>
+      <button id="pauseBtn" hidden>Pausa</button>
+      <button id="redoBtn" hidden>Ripeti passo</button>
+      <button id="skipBtn" hidden>Salta (non c'è)</button>
+    </div>
+  </section>
+
+  <!-- 3. dati in tempo reale -->
+  <section class="card" id="liveCard" hidden>
+    <div class="row" style="justify-content: space-between">
+      <strong>Dati in tempo reale</strong>
+      <span class="muted" id="pktCount">0 pacchetti</span>
+    </div>
+    <div class="live" id="live">in attesa di dati…</div>
+    <p class="muted" id="noData" hidden>Nessun dato ricevuto finora. Muovi uno stick: se non compare nulla, il FlyPad potrebbe aver bisogno di un comando di attivazione. Copia comunque il report qui sotto.</p>
+  </section>
+
+  <!-- 4. report -->
+  <section class="card" id="reportCard" hidden>
+    <strong>Report</strong>
+    <p class="muted">Copialo e incollalo nella chat. Contiene la mappatura ricavata e i dati grezzi di ogni passo.</p>
+    <div class="row">
+      <button class="primary" id="copyBtn">Copia report</button>
+      <button id="downloadBtn">Scarica file</button>
+      <button id="shareBtn" hidden>Condividi</button>
+    </div>
+    <textarea id="report" readonly></textarea>
+  </section>
+</main>
+
+<script>
+const U = (s) => `9e35${s}-4344-44d4-a2e2-0c7f6046878b`;
+const SVC = { a: U('fa00'), b: U('fb00') };
+const NOTIFY = { fa01: U('fa01'), fb01: U('fb01') };
+const READABLE = { fa03: [SVC.a, U('fa03')], fb02: [SVC.b, U('fb02')] };
+
+const PREP_MS = 2500, REC_MS = 2500;
+const STEPS = [
+  { id: 'idle', what: 'Non toccare niente', rec: 4000 },
+  { id: 'ls_up', what: 'Stick SINISTRO tutto in su' },
+  { id: 'ls_down', what: 'Stick SINISTRO tutto in giù' },
+  { id: 'ls_left', what: 'Stick SINISTRO tutto a sinistra' },
+  { id: 'ls_right', what: 'Stick SINISTRO tutto a destra' },
+  { id: 'rs_up', what: 'Stick DESTRO tutto in su' },
+  { id: 'rs_down', what: 'Stick DESTRO tutto in giù' },
+  { id: 'rs_left', what: 'Stick DESTRO tutto a sinistra' },
+  { id: 'rs_right', what: 'Stick DESTRO tutto a destra' },
+  { id: 'btn_a', what: 'Tieni premuto A' },
+  { id: 'btn_b', what: 'Tieni premuto B' },
+  { id: 'btn_1', what: 'Tieni premuto 1' },
+  { id: 'btn_2', what: 'Tieni premuto 2' },
+  { id: 'btn_center', what: 'Tieni premuto il tasto centrale (decollo/atterraggio)' },
+  { id: 'btn_l1', what: 'Tieni premuto il dorsale sinistro alto (L1)', optional: true },
+  { id: 'btn_l2', what: 'Tieni premuto il dorsale sinistro basso (L2)', optional: true },
+  { id: 'btn_r1', what: 'Tieni premuto il dorsale destro alto (R1)', optional: true },
+  { id: 'btn_r2', what: 'Tieni premuto il dorsale destro basso (R2)', optional: true },
+  { id: 'ls_click', what: 'Premi lo stick SINISTRO verso il basso (click)', optional: true },
+  { id: 'rs_click', what: 'Premi lo stick DESTRO verso il basso (click)', optional: true },
+  { id: 'btn_other', what: 'Se c\'è un altro tasto non elencato, tienilo premuto', optional: true },
+  { id: 'free', what: 'Fai cerchi lenti con ENTRAMBI gli stick', rec: 8000 },
+];
+
+const $ = (id) => document.getElementById(id);
+const hex = (dv) => Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength), (b) => b.toString(16).padStart(2, '0')).join(' ');
+const bytesOf = (h) => h ? h.split(' ').map((x) => parseInt(x, 16)) : [];
+
+let device = null;
+const packets = [];             // { t, ch, hex }
+const last = {};                // ch -> hex
+const info = {};
+const results = {};             // stepId -> { skipped, samples: { ch: [hex] } }
+let stepIdx = 0, running = false, paused = false, timer = null;
+
+// ---------------- connessione
+
+$('connectBtn').onclick = async () => {
+  $('connectErr').hidden = true;
+  if (!('bluetooth' in navigator)) return showErr('Questo browser non supporta Web Bluetooth. Usa Chrome su Android, con la pagina in HTTPS.');
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'FLYPAD' }, { namePrefix: 'FlyPad' }],
+      optionalServices: [SVC.a, SVC.b, 'battery_service', 'device_information'],
+    });
+    device.addEventListener('gattserverdisconnected', () => setStatus('disconnesso', 'warn'));
+    const gatt = await device.gatt.connect();
+    info.name = device.name;
+
+    for (const [ch, uuid] of Object.entries(NOTIFY)) {
+      const svc = await gatt.getPrimaryService(ch.startsWith('fa') ? SVC.a : SVC.b);
+      const c = await svc.getCharacteristic(uuid);
+      c.addEventListener('characteristicvaluechanged', (e) => onPacket(ch, e.target.value));
+      await c.startNotifications();
+    }
+    for (const [k, [s, c]] of Object.entries(READABLE)) {
+      try { info[k] = hex(await (await (await gatt.getPrimaryService(s)).getCharacteristic(c)).readValue()); } catch (e) { info[k] = 'errore: ' + e.message; }
+    }
+    try {
+      const bc = await (await gatt.getPrimaryService('battery_service')).getCharacteristic('battery_level');
+      info.battery = (await bc.readValue()).getUint8(0);
+    } catch {}
+    try {
+      const dis = await gatt.getPrimaryService('device_information');
+      for (const [k, u] of [['manufacturer', 0x2a29], ['firmware', 0x2a26], ['hardware', 0x2a27], ['software', 0x2a28]]) {
+        try { info[k] = new TextDecoder().decode(await (await dis.getCharacteristic(u)).readValue()); } catch {}
+      }
+    } catch {}
+
+    setStatus(`${info.name}${info.battery != null ? ' · batteria ' + info.battery + '%' : ''}`, 'ok');
+    $('connectCard').hidden = true;
+    $('stepCard').hidden = false;
+    $('liveCard').hidden = false;
+    showStep();
+    setTimeout(() => { if (!packets.length) $('noData').hidden = false; }, 6000);
+  } catch (e) {
+    if (!/cancel|chosen/i.test(e.message)) showErr('Connessione non riuscita: ' + e.message);
+  }
+};
+
+function showErr(msg) { $('connectErr').textContent = msg; $('connectErr').hidden = false; }
+function setStatus(text, cls) { $('status').innerHTML = `<span class="chip ${cls || ''}"></span>`; $('status').firstChild.textContent = text; }
+
+// ---------------- ricezione
+
+let prevLive = {};
+function onPacket(ch, dv) {
+  const h = hex(dv);
+  packets.push({ t: performance.now(), ch, hex: h });
+  last[ch] = h;
+  $('noData').hidden = true;
+  $('pktCount').textContent = `${packets.length} pacchetti`;
+  renderLive();
+}
+
+function renderLive() {
+  const lines = Object.keys(NOTIFY).map((ch) => {
+    const cur = bytesOf(last[ch]);
+    const prev = bytesOf(prevLive[ch]);
+    const cells = cur.map((b, i) => {
+      const s = b.toString(16).padStart(2, '0');
+      return prev.length && prev[i] !== b ? `<span class="chg">${s}</span>` : s;
+    }).join(' ');
+    return `<b>${ch}</b>  ${cells || '—'}`;
+  });
+  $('live').innerHTML = lines.join('\n');
+  prevLive = { ...last };
+}
+
+// ---------------- procedura guidata
+
+function showStep() {
+  const s = STEPS[stepIdx];
+  $('stepCount').textContent = `Passo ${stepIdx + 1} di ${STEPS.length}`;
+  $('stepWhat').textContent = s.what;
+  $('stepPhase').textContent = running ? '' : 'Premi Inizia quando sei pronto';
+  $('stepPhase').className = 'phase';
+  $('stepBar').style.width = '0';
+  $('skipBtn').hidden = !(running && s.optional);
+}
+
+$('startBtn').onclick = () => {
+  running = true; paused = false;
+  $('startBtn').hidden = true; $('pauseBtn').hidden = false; $('redoBtn').hidden = false;
+  runStep();
+};
+$('pauseBtn').onclick = () => {
+  paused = !paused;
+  $('pauseBtn').textContent = paused ? 'Riprendi' : 'Pausa';
+  if (paused) { clearInterval(timer); $('stepPhase').textContent = 'In pausa'; $('stepPhase').className = 'phase'; }
+  else runStep();
+};
+$('redoBtn').onclick = () => { if (paused) return; clearInterval(timer); runStep(); };
+$('skipBtn').onclick = () => { clearInterval(timer); results[STEPS[stepIdx].id] = { skipped: true }; next(); };
+
+function runStep() {
+  const s = STEPS[stepIdx];
+  showStep();
+  const recMs = s.rec || REC_MS;
+  const t0 = performance.now();
+  let recStart = null, snapshot = null;
+  timer = setInterval(() => {
+    const el = performance.now() - t0;
+    if (el < PREP_MS) {
+      $('stepPhase').textContent = `Preparati… ${Math.ceil((PREP_MS - el) / 1000)}`;
+      $('stepPhase').className = 'phase prep';
+      $('stepBar').style.width = (el / PREP_MS * 100) + '%';
+      return;
+    }
+    if (recStart === null) { recStart = performance.now(); snapshot = { ...last }; }
+    const r = performance.now() - recStart;
+    $('stepPhase').textContent = 'Registro… tieni la posizione';
+    $('stepPhase').className = 'phase rec';
+    $('stepBar').style.width = Math.min(100, r / recMs * 100) + '%';
+    if (r >= recMs) {
+      clearInterval(timer);
+      const samples = {};
+      for (const ch of Object.keys(NOTIFY)) {
+        const during = packets.filter((p) => p.ch === ch && p.t >= recStart).map((p) => p.hex);
+        // le notifiche arrivano solo ai cambiamenti: includo l'ultimo valore noto prima della finestra
+        samples[ch] = (snapshot[ch] ? [snapshot[ch]] : []).concat(during).slice(-300);
+      }
+      results[s.id] = { skipped: false, samples };
+      $('stepPhase').textContent = 'Fatto';
+      $('stepPhase').className = 'phase done';
+      setTimeout(next, 400);
+    }
+  }, 50);
+}
+
+function next() {
+  stepIdx++;
+  if (stepIdx >= STEPS.length) return finish();
+  runStep();
+}
+
+// ---------------- analisi
+
+function mode(arr) {
+  const m = new Map(); let best = null, n = 0;
+  for (const x of arr) { const c = (m.get(x) || 0) + 1; m.set(x, c); if (c > n) { n = c; best = x; } }
+  return best;
+}
+
+function analyze() {
+  const base = {};
+  for (const ch of Object.keys(NOTIFY)) base[ch] = mode(results.idle?.samples?.[ch] || []) || last[ch] || '';
+  const map = {};
+  for (const s of STEPS) {
+    const r = results[s.id];
+    if (!r || r.skipped || s.id === 'idle') continue;
+    const out = [];
+    for (const ch of Object.keys(NOTIFY)) {
+      const b = bytesOf(base[ch]);
+      const pk = (r.samples[ch] || []).map(bytesOf);
+      if (!pk.length) continue;
+      const len = Math.max(b.length, ...pk.map((p) => p.length));
+      for (let i = 0; i < len; i++) {
+        const vals = pk.map((p) => p[i]).filter((v) => v !== undefined);
+        const changed = vals.filter((v) => v !== b[i]);
+        if (!changed.length) continue;
+        const held = mode(changed);
+        const entry = { ch, byte: i, base: b[i], held, min: Math.min(...vals), max: Math.max(...vals) };
+        if (b[i] !== undefined) entry.bits = (held ^ b[i]);
+        out.push(entry);
+      }
+    }
+    map[s.id] = out;
+  }
+  return { base, map };
+}
+
+const h2 = (n) => n === undefined ? '??' : '0x' + n.toString(16).padStart(2, '0');
+
+function summaryText(a) {
+  const lines = [];
+  lines.push(`FlyPad: ${info.name || '?'} · fw ${info.firmware || '?'} · sw ${info.software || '?'} · hw ${info.hardware || '?'} · batteria ${info.battery ?? '?'}%`);
+  lines.push(`fa03=${info.fa03 || '?'}  fb02=${info.fb02 || '?'}`);
+  lines.push(`Riposo: fa01=[${a.base.fa01 || '—'}]  fb01=[${a.base.fb01 || '—'}]`);
+  lines.push(`Pacchetti totali: ${packets.length} (fa01 ${packets.filter((p) => p.ch === 'fa01').length}, fb01 ${packets.filter((p) => p.ch === 'fb01').length})`);
+  lines.push('');
+  for (const s of STEPS) {
+    if (s.id === 'idle') continue;
+    const r = results[s.id];
+    if (!r) continue;
+    if (r.skipped) { lines.push(`${s.id}: saltato`); continue; }
+    const m = a.map[s.id] || [];
+    if (!m.length) { lines.push(`${s.id}: nessuna variazione`); continue; }
+    lines.push(`${s.id}: ` + m.map((e) => `${e.ch}[${e.byte}] ${h2(e.base)}→${h2(e.held)} (min ${h2(e.min)} max ${h2(e.max)}${e.bits !== undefined ? ', xor ' + h2(e.bits) : ''})`).join(' · '));
+  }
+  return lines.join('\n');
+}
+
+function finish() {
+  running = false;
+  $('stepCount').textContent = 'Completato';
+  $('stepWhat').textContent = 'Mappatura finita';
+  $('stepPhase').textContent = 'Il report è qui sotto';
+  $('stepPhase').className = 'phase done';
+  $('stepBar').style.width = '100%';
+  ['pauseBtn', 'redoBtn', 'skipBtn'].forEach((id) => $(id).hidden = true);
+  $('startBtn').hidden = false; $('startBtn').textContent = 'Ricomincia';
+  $('startBtn').onclick = () => location.reload();
+
+  const a = analyze();
+  const full = {
+    summary: summaryText(a),
+    info,
+    baseline: a.base,
+    mapping: a.map,
+    raw: Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.skipped ? 'skipped' : v.samples])),
+  };
+  $('report').value = full.summary + '\n\n--- JSON ---\n' + JSON.stringify(full);
+  $('reportCard').hidden = false;
+  $('shareBtn').hidden = !navigator.share;
+  $('reportCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+$('copyBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText($('report').value); $('copyBtn').textContent = 'Copiato'; }
+  catch { $('report').select(); $('copyBtn').textContent = 'Selezionato: copia a mano'; }
+};
+$('downloadBtn').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([$('report').value], { type: 'text/plain' }));
+  a.download = 'flypad-report.txt';
+  a.click();
+};
+$('shareBtn').onclick = () => {
+  const file = new File([$('report').value], 'flypad-report.txt', { type: 'text/plain' });
+  const data = navigator.canShare?.({ files: [file] }) ? { files: [file], title: 'FlyPad report' } : { text: $('report').value };
+  navigator.share(data).catch(() => {});
+};
+</script>
+</body>
+</html>
