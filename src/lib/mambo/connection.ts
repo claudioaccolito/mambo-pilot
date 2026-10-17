@@ -80,7 +80,7 @@ export class MamboConnection {
     this.device = device;
     device.addEventListener('gattserverdisconnected', this.handleDisconnect);
 
-    const server = await device.gatt!.connect();
+    const server = await connectWithRetry(device);
 
     // Caratteristiche di invio
     const sendSvc = await server.getPrimaryService(SERVICES.send);
@@ -236,4 +236,19 @@ function isoTime(d: Date): string {
   const off = -d.getTimezoneOffset();
   const sign = off >= 0 ? '+' : '-';
   return `T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${sign}${pad(Math.floor(Math.abs(off) / 60))}${pad(Math.abs(off) % 60)}`;
+}
+
+/** Su Android il primo tentativo GATT fallisce spesso: riprova qualche volta prima di arrendersi. */
+export async function connectWithRetry(device: BluetoothDevice, attempts = 4): Promise<BluetoothRemoteGATTServer> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (device.gatt!.connected) device.gatt!.disconnect();
+      return await device.gatt!.connect();
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 800 + i * 700));
+    }
+  }
+  throw lastErr;
 }

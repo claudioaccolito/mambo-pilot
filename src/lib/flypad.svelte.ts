@@ -1,4 +1,5 @@
 import { drone } from './drone.svelte';
+import { connectWithRetry } from './mambo/connection';
 import type { FlipDirection } from './mambo/protocol';
 
 /**
@@ -75,7 +76,7 @@ class FlyPadInput {
       });
       this.device = device;
       device.addEventListener('gattserverdisconnected', this.onDisconnect);
-      const gatt = await device.gatt!.connect();
+      const gatt = await connectWithRetry(device);
 
       const input = await (await gatt.getPrimaryService(SVC)).getCharacteristic(INPUT);
       input.addEventListener('characteristicvaluechanged', (e) =>

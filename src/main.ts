@@ -17,4 +17,13 @@ document.addEventListener('pointerdown', () => {
     .catch(() => {})
 }, { once: true })
 
+// chiude le connessioni Bluetooth quando la pagina viene chiusa o ricaricata,
+// così drone e FlyPad non restano occupati da una scheda vecchia
+import { drone } from './lib/drone.svelte'
+import { flypad } from './lib/flypad.svelte'
+window.addEventListener('pagehide', () => {
+  try { drone.disconnect() } catch {}
+  try { flypad.disconnect() } catch {}
+})
+
 export default app
