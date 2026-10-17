@@ -46,7 +46,7 @@ class DroneStore {
   /** Ultimo errore di invio comandi (vuoto se tutto ok). */
   sendError = $state('');
   /** Diagnostica di connessione, aggiornata a ogni apertura delle impostazioni. */
-  diag = $state({ ok: 0, failed: 0, lastError: '', props: {} as Record<string, string> });
+  diag = $state({ ok: 0, failed: 0, rx: 0, lastRx: '', notifyFailed: [] as string[], lastError: '', props: {} as Record<string, string> });
 
   // stick: sinistro = gaz/yaw, destro = pitch/roll
   sticks = $state<Pcmd>({ roll: 0, pitch: 0, yaw: 0, gaz: 0 });
@@ -122,7 +122,7 @@ class DroneStore {
 
   refreshDiag() {
     const st = this.conn.stats;
-    this.diag = { ok: st.ok, failed: st.failed, lastError: st.lastError, props: { ...st.props } };
+    this.diag = { ...st, notifyFailed: [...st.notifyFailed], props: { ...st.props } };
   }
 
   disconnect() {

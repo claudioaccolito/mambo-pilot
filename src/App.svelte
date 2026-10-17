@@ -235,6 +235,8 @@
           <h2>Diagnostica</h2>
           <p class="note diag">
             Comandi inviati: {drone.diag.ok} ok · {drone.diag.failed} falliti<br />
+            Dati ricevuti: {drone.diag.rx}{drone.diag.lastRx ? ` · ultimo ${drone.diag.lastRx}` : ''}<br />
+            {#if drone.diag.notifyFailed.length}Notifiche non attive: {drone.diag.notifyFailed.join(', ')}<br />{/if}
             {#each Object.entries(drone.diag.props) as [k, v] (k)}{k}: {v}<br />{/each}
             {#if drone.diag.lastError}Ultimo errore: {drone.diag.lastError}{/if}
           </p>

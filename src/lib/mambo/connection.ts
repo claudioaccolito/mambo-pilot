@@ -40,7 +40,7 @@ export class MamboConnection {
   private errorListeners = new Set<(msg: string) => void>();
 
   /** Diagnostica: scritture riuscite/fallite e proprietà delle caratteristiche di invio. */
-  stats = { ok: 0, failed: 0, lastError: '', props: {} as Record<string, string> };
+  stats = { ok: 0, failed: 0, rx: 0, lastRx: '', notifyFailed: [] as string[], lastError: '', props: {} as Record<string, string> };
 
   /** Valore corrente degli stick, letto dal loop PCMD. */
   pcmd: Pcmd = { roll: 0, pitch: 0, yaw: 0, gaz: 0 };
@@ -112,6 +112,7 @@ export class MamboConnection {
           }
         } catch (err) {
           console.warn('Notifica non attivabile', uuid, err);
+          this.stats.notifyFailed.push(uuid.slice(4, 8));
         }
       }
     }
@@ -208,6 +209,8 @@ export class MamboConnection {
   }
 
   private handleNotification(uuid: string, value: DataView) {
+    this.stats.rx++;
+    this.stats.lastRx = `${uuid.slice(4, 8)}: ${Array.from(new Uint8Array(value.buffer, value.byteOffset, Math.min(value.byteLength, 10)), (b) => b.toString(16).padStart(2, '0')).join(' ')}`;
     const { type, seq, event } = parsePacket(value);
     // I dati su fb0e vanno confermati sul canale fa1e
     if (uuid === CHARS.ackDroneData && type === DATA_TYPE.dataWithAck) {
