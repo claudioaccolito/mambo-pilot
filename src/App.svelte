@@ -68,9 +68,22 @@
       {/if}
       {#if gamepad.name}<span class="chip" title={gamepad.name}>🎮</span>{/if}
       <button class="ghost" onclick={() => (sheet = 'paths')}>Percorsi</button>
-      <button class="ghost" onclick={() => (sheet = 'settings')} aria-label="Impostazioni">⚙</button>
+      <button
+        class="ghost"
+        onclick={() => {
+          drone.refreshDiag();
+          sheet = 'settings';
+        }}
+        aria-label="Impostazioni">⚙</button
+      >
     </div>
   </header>
+
+  {#if connected && drone.sendError}
+    <button class="alert send-err" onclick={() => (drone.sendError = '')}>
+      Il drone non riceve i comandi: {drone.sendError} (tocca per chiudere)
+    </button>
+  {/if}
 
   {#if drone.alert !== 'none' && ALERT_LABEL[drone.alert]}
     <div class="alert">{ALERT_LABEL[drone.alert]}</div>
@@ -218,6 +231,14 @@
         {#if connected}
           <button class="ghost" onclick={() => drone.disconnect()}>Disconnetti</button>
         {/if}
+        {#if connected}
+          <h2>Diagnostica</h2>
+          <p class="note diag">
+            Comandi inviati: {drone.diag.ok} ok · {drone.diag.failed} falliti<br />
+            {#each Object.entries(drone.diag.props) as [k, v] (k)}{k}: {v}<br />{/each}
+            {#if drone.diag.lastError}Ultimo errore: {drone.diag.lastError}{/if}
+          </p>
+        {/if}
         <h2>FlyPad</h2>
         {#if flypad.status === 'connected'}
           <button class="ghost" onclick={() => flypad.disconnect()}>Scollega FlyPad</button>
@@ -293,6 +314,17 @@
     background: var(--surface-2);
     color: var(--text);
     font-variant-numeric: tabular-nums;
+  }
+  .send-err {
+    border: none;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+  }
+  .diag {
+    font-family: ui-monospace, monospace;
+    user-select: text;
+    -webkit-user-select: text;
   }
   .chip.ok {
     color: var(--ok);

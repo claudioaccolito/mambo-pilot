@@ -37,6 +37,10 @@ export class MamboConnection {
   private pcmdTimer: number | null = null;
   private listeners = new Set<Listener>();
   private disconnectListeners = new Set<() => void>();
+  private errorListeners = new Set<(msg: string) => void>();
+
+  /** Diagnostica: scritture riuscite/fallite e proprietà delle caratteristiche di invio. */
+  stats = { ok: 0, failed: 0, lastError: '', props: {} as Record<string, string> };
 
   /** Valore corrente degli stick, letto dal loop PCMD. */
   pcmd: Pcmd = { roll: 0, pitch: 0, yaw: 0, gaz: 0 };
@@ -58,6 +62,11 @@ export class MamboConnection {
     return () => this.listeners.delete(fn);
   }
 
+  onError(fn: (msg: string) => void): () => void {
+    this.errorListeners.add(fn);
+    return () => this.errorListeners.delete(fn);
+  }
+
   onDisconnect(fn: () => void): () => void {
     this.disconnectListeners.add(fn);
     return () => this.disconnectListeners.delete(fn);
@@ -76,7 +85,12 @@ export class MamboConnection {
     // Caratteristiche di invio
     const sendSvc = await server.getPrimaryService(SERVICES.send);
     for (const uuid of [CHARS.sendNoAck, CHARS.sendWithAck, CHARS.sendHighPriority, CHARS.ackCommand]) {
-      this.chars.set(uuid, await sendSvc.getCharacteristic(uuid));
+      const c = await sendSvc.getCharacteristic(uuid);
+      this.chars.set(uuid, c);
+      const p = c.properties;
+      this.stats.props[uuid.slice(4, 8)] = [p.write && 'write', p.writeWithoutResponse && 'writeNoResp', p.notify && 'notify']
+        .filter(Boolean)
+        .join('+');
     }
 
     // Handshake: il drone accetta comandi solo dopo che le notifiche sono attive
@@ -147,15 +161,32 @@ export class MamboConnection {
     return this.write(CHARS.sendWithAck, buildPacket(DATA_TYPE.dataWithAck, this.seq.withAck, cmd, args));
   }
 
-  private write(uuid: string, packet: Uint8Array, withoutResponse = false): Promise<void> {
+  /**
+   * Scrive un pacchetto. Come pyparrot, usa la scrittura senza conferma quando la
+   * caratteristica la supporta (il Mambo la preferisce); altrimenti quella con conferma.
+   */
+  private write(uuid: string, packet: Uint8Array): Promise<void> {
     const c = this.chars.get(uuid);
     if (!c || !this.connected) return Promise.resolve();
+    const noResp = c.properties.writeWithoutResponse || !c.properties.write;
     const op = this.queue.then(() =>
-      withoutResponse ? c.writeValueWithoutResponse(packet as BufferSource) : c.writeValueWithResponse(packet as BufferSource),
+      noResp ? c.writeValueWithoutResponse(packet as BufferSource) : c.writeValueWithResponse(packet as BufferSource),
+    );
+    const done = op.then(
+      () => {
+        this.stats.ok++;
+      },
+      (err: unknown) => {
+        this.stats.failed++;
+        const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        this.stats.lastError = `${uuid.slice(4, 8)} · ${msg}`;
+        console.warn('Scrittura BLE fallita', uuid, err);
+        for (const l of this.errorListeners) l(this.stats.lastError);
+      },
     );
     // la coda non si blocca se una scrittura fallisce
-    this.queue = op.catch((err) => console.warn('Scrittura BLE fallita', err));
-    return op.catch(() => undefined);
+    this.queue = done;
+    return done;
   }
 
   private startPcmdLoop() {
@@ -166,7 +197,7 @@ export class MamboConnection {
       busy = true;
       this.seq.noAck = (this.seq.noAck + 1) & 0xff;
       const { roll, pitch, yaw, gaz } = this.pcmd;
-      await this.write(CHARS.sendNoAck, buildPcmd(this.seq.noAck, roll, pitch, yaw, gaz), true);
+      await this.write(CHARS.sendNoAck, buildPcmd(this.seq.noAck, roll, pitch, yaw, gaz));
       busy = false;
     }, PCMD_INTERVAL_MS);
   }
