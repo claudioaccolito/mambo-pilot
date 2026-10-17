@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { drone } from './lib/drone.svelte';
   import { gamepad } from './lib/gamepad.svelte';
+  import { flypad, FLYPAD_HELP } from './lib/flypad.svelte';
   import Joystick from './lib/components/Joystick.svelte';
   import Recorder from './lib/components/Recorder.svelte';
 
@@ -60,6 +61,11 @@
     {/if}
 
     <div class="top-actions">
+      {#if flypad.status === 'connected'}
+        <span class="chip flypad" class:slow={flypad.slow} title={flypad.name}>
+          FlyPad{flypad.battery !== null ? ` ${flypad.battery}%` : ''}{flypad.slow ? ' · lento' : ''}
+        </span>
+      {/if}
       {#if gamepad.name}<span class="chip" title={gamepad.name}>🎮</span>{/if}
       <button class="ghost" onclick={() => (sheet = 'paths')}>Percorsi</button>
       <button class="ghost" onclick={() => (sheet = 'settings')} aria-label="Impostazioni">⚙</button>
@@ -82,15 +88,32 @@
       {:else}
         <h1>Collega il Mambo</h1>
         <ol>
-          <li>Spegni il FlyPad: il drone accetta una sola connessione alla volta.</li>
+          <li>
+            <strong>Con il FlyPad</strong> (facoltativo): tieni il drone spento, accendi il FlyPad e collegalo per primo,
+            così non si aggancia direttamente al drone.
+          </li>
           <li>Accendi il drone e appoggialo su una superficie piana.</li>
-          <li>Premi il pulsante e scegli il Mambo dalla lista.</li>
+          <li>Premi "Cerca drone" e scegli il Mambo dalla lista.</li>
         </ol>
-        <button class="primary big" disabled={drone.status === 'connecting'} onclick={() => drone.connect()}>
-          {drone.status === 'connecting' ? 'Connessione…' : 'Cerca drone'}
-        </button>
+        <div class="connect-actions">
+          {#if flypad.status === 'connected'}
+            <span class="chip ok">✓ {flypad.name} collegato</span>
+          {:else}
+            <button disabled={flypad.status === 'connecting'} onclick={() => flypad.connect()}>
+              {flypad.status === 'connecting' ? 'Connessione…' : '1 · Collega FlyPad'}
+            </button>
+          {/if}
+          <button class="primary big" disabled={drone.status === 'connecting'} onclick={() => drone.connect()}>
+            {drone.status === 'connecting' ? 'Connessione…' : 'Cerca drone'}
+          </button>
+        </div>
+        {#if flypad.status === 'error'}
+          <p class="err">FlyPad: {flypad.error}</p>
+        {/if}
         {#if drone.status === 'error'}
-          <p class="err">Errore: {drone.error}</p>
+          <p class="err">
+            Errore: {drone.error}{flypad.status !== 'connected' ? ' · Se il FlyPad è acceso, spegnilo: occupa il drone.' : ''}
+          </p>
         {/if}
       {/if}
     </section>
@@ -195,6 +218,19 @@
         {#if connected}
           <button class="ghost" onclick={() => drone.disconnect()}>Disconnetti</button>
         {/if}
+        <h2>FlyPad</h2>
+        {#if flypad.status === 'connected'}
+          <button class="ghost" onclick={() => flypad.disconnect()}>Scollega FlyPad</button>
+        {:else}
+          <button disabled={flypad.status === 'connecting'} onclick={() => flypad.connect()}>Collega FlyPad</button>
+        {/if}
+        <p class="note">Stick come sul drone: sinistro quota e rotazione, destro avanti/indietro e laterale.</p>
+        <dl class="keymap">
+          {#each FLYPAD_HELP as [key, action] (key)}
+            <dt>{key}</dt>
+            <dd>{action}</dd>
+          {/each}
+        </dl>
         <p class="note">
           Gamepad: stick come a schermo · A decolla/atterra · X foto · Y spara · LB/RB pinza · croce flip · Start =
           stop motori.
@@ -257,6 +293,34 @@
     background: var(--surface-2);
     color: var(--text);
     font-variant-numeric: tabular-nums;
+  }
+  .chip.ok {
+    color: var(--ok);
+  }
+  .chip.flypad.slow {
+    color: var(--warn);
+  }
+  .connect-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .keymap {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    margin: 0;
+    font-size: 13px;
+  }
+  .keymap dt {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .keymap dd {
+    margin: 0;
+    color: var(--muted);
   }
   .chip.state {
     color: var(--accent);
